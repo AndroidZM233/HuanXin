@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.constraint.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@mipmap/bg_chatroom">
+
+    <TextView
+        android:id="@+id/tv_show"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:paddingLeft="5dp"
+        android:paddingTop="30dp"
+        android:text="录音中..."
+        android:textColor="@color/btn_white_normal"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+</android.support.constraint.ConstraintLayout>
