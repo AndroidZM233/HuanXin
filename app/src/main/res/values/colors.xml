@@ -55,4 +55,8 @@
 
     <color name="em_indicator_select">#9E9E9E</color>
     <color name="em_indicator_normal">#1AFFFFFF</color>
+
+    <color name="green">#179F76</color>
+    <color name="blue">#2A74FF</color>
+    <color name="pink">#9B2E2E</color>
 </resources>

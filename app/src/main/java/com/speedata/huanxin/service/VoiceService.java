@@ -1,22 +1,21 @@
-package com.speedata.huanxin.ui;
+package com.speedata.huanxin.service;
 
 import android.annotation.SuppressLint;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
-import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
-import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.text.TextUtils;
 import android.util.Log;
-import android.view.KeyEvent;
-import android.view.View;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import com.hyphenate.EMCallBack;
 import com.hyphenate.EMError;
 import com.hyphenate.EMMessageListener;
 import com.hyphenate.EMValueCallBack;
@@ -26,74 +25,175 @@ import com.hyphenate.chat.EMMessage;
 import com.hyphenate.chat.EMVoiceMessageBody;
 import com.hyphenate.exceptions.HyphenateException;
 import com.hyphenate.util.EMLog;
-import com.hyphenate.util.EasyUtils;
-import com.kaopiz.kprogresshud.KProgressHUD;
+import com.speedata.huanxin.Constant;
+import com.speedata.huanxin.DemoHelper;
 import com.speedata.huanxin.R;
+import com.speedata.huanxin.db.DemoDBManager;
+import com.speedata.huanxin.domain.MsgEvent;
 import com.speedata.huanxin.model.EaseChatRowVoicePlayer;
 import com.speedata.huanxin.model.EaseVoiceRecorder;
-import com.speedata.huanxin.runtimepermissions.PermissionsManager;
+import com.speedata.huanxin.ui.PublicChatRoomsActivity;
+import com.speedata.huanxin.utils.DeviceUtils;
 import com.speedata.huanxin.utils.EaseCommonUtils;
-import com.speedata.huanxin.view.WaveView;
+import com.speedata.huanxin.utils.SharedXmlUtil;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.File;
 import java.util.List;
 
-/**
- *
- */
-public class ChatActivity extends BaseActivity {
-    public static ChatActivity activityInstance;
-    String toChatUsername;
+public class VoiceService extends Service {
+    private boolean isRegister;
+    private String toChatUsername;
+
     protected EaseVoiceRecorder voiceRecorder;
     protected PowerManager.WakeLock wakeLock;
     private EaseChatRowVoicePlayer voicePlayer;
-    private WaveView mWave;
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
 
     @SuppressLint("InvalidWakeLockTag")
     @Override
-    protected void onCreate(Bundle arg0) {
-        super.onCreate(arg0);
-        setContentView(R.layout.activity_voice);
-        activityInstance = this;
-        toChatUsername = getIntent().getExtras().getString("userId");
-        mWave = findViewById(R.id.wave);
-
-        Log.e("ZM", "已进入");
+    public int onStartCommand(Intent intent, int flags, int startId) {
         voiceRecorder = new EaseVoiceRecorder(mHandler);
         wakeLock = ((PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE)).newWakeLock(
                 PowerManager.SCREEN_DIM_WAKE_LOCK, "demo");
-
-        EMClient.getInstance().chatManager().addMessageListener(msgListener);
         voicePlayer = EaseChatRowVoicePlayer.getInstance(getApplicationContext());
 
-        start();
-//        EMClient.getInstance().chatroomManager().joinChatRoom(toChatUsername, new EMValueCallBack<EMChatRoom>() {
-//            @SuppressLint("InvalidWakeLockTag")
-//            @Override
-//            public void onSuccess(EMChatRoom value) {
-//                Log.e("ZM", "已进入" + value.getName());
-//                voiceRecorder = new EaseVoiceRecorder(mHandler);
-//                wakeLock = ((PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE)).newWakeLock(
-//                        PowerManager.SCREEN_DIM_WAKE_LOCK, "demo");
-//
-//                EMClient.getInstance().chatManager().addMessageListener(msgListener);
-//                voicePlayer = EaseChatRowVoicePlayer.getInstance(getApplicationContext());
-//            }
-//
-//            @Override
-//            public void onError(int error, String errorMsg) {
-//                ChatActivity.this.finish();
-//            }
-//        });
+        isRegister = SharedXmlUtil.getInstance(this).read(Constant.EVENT_IS_REGISTER, false);
+        open();
+        return super.onStartCommand(intent, flags, startId);
+    }
+
+
+    /**
+     * 开启网络对讲
+     */
+    public void open() {
+        if (!isRegister) {
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        final String imei = DeviceUtils.getIMEI(getApplicationContext());
+                        // call method in SDK
+                        EMClient.getInstance().createAccount(imei, imei + "speedata");
+                        // save current user
+                        DemoHelper.getInstance().setCurrentUserName(imei);
+                        SharedXmlUtil.getInstance(getApplicationContext()).write(Constant.EVENT_IS_REGISTER, true);
+                        SharedXmlUtil.getInstance(getApplicationContext()).write(Constant.EVENT_ID, imei);
+                        login();
+                    } catch (final HyphenateException e) {
+                        e.printStackTrace();
+                        Log.e("ZM", "HyphenateException: " + e.toString());
+                        int errorCode = e.getErrorCode();
+                        if (errorCode == EMError.USER_ALREADY_EXIST) {
+                            SharedXmlUtil.getInstance(getApplicationContext()).write(Constant.EVENT_IS_REGISTER, true);
+                            login();
+                        } else {
+                            EventBus.getDefault().post(new MsgEvent(Constant.EVENT_ERROR, "注册出错" + e.toString()));
+                        }
+
+                    }
+                }
+            }).start();
+        } else {
+            login();
+        }
+    }
+
+
+    /**
+     * login
+     */
+    public void login() {
+        String currentUsername = DeviceUtils.getIMEI(getApplicationContext());
+        String currentPassword = currentUsername + "speedata";
+
+        DemoDBManager.getInstance().closeDB();
+        DemoHelper.getInstance().setCurrentUserName(currentUsername);
+
+        Log.e("ZM", "EMClient.getInstance().login");
+        EMClient.getInstance().login(currentUsername, currentPassword, new EMCallBack() {
+
+            @Override
+            public void onSuccess() {
+                Log.e("ZM", "login: onSuccess");
+                DemoHelper.getInstance().getUserProfileManager().asyncGetCurrentUserInfo();
+                EventBus.getDefault().post(new MsgEvent(Constant.EVENT_LOGIN, "状态：已登陆"));
+
+                toChatUsername = SharedXmlUtil.getInstance(getApplicationContext()).read(Constant.EVENT_ROOM_ID, "");
+                if (TextUtils.isEmpty(toChatUsername)) {
+                    Intent intent = new Intent(VoiceService.this, PublicChatRoomsActivity.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+                    startActivity(intent);
+                } else {
+                    joinChatRoom(toChatUsername);
+                }
+            }
+
+            @Override
+            public void onProgress(int progress, String status) {
+                Log.d("ZM", "login: onProgress");
+            }
+
+            @Override
+            public void onError(final int code, final String message) {
+                Log.d("ZM", "login: onError: " + code);
+                EventBus.getDefault().post(new MsgEvent(Constant.EVENT_ERROR, message));
+            }
+        });
+    }
+
+
+    /**
+     * 加入聊天室
+     */
+    private void joinChatRoom(String roomId) {
+        EMClient.getInstance().chatroomManager().joinChatRoom(roomId, new EMValueCallBack<EMChatRoom>() {
+            @SuppressLint("InvalidWakeLockTag")
+            @Override
+            public void onSuccess(final EMChatRoom value) {
+                Log.e("ZM", "已进入" + value.getName());
+                EventBus.getDefault().post(new MsgEvent(Constant.EVENT_ROOM_NAME, "当前RoomID：" + value.getName()));
+                EMClient.getInstance().chatManager().addMessageListener(msgListener);
+            }
+
+            @Override
+            public void onError(int error, String errorMsg) {
+                EventBus.getDefault().post(new MsgEvent(Constant.EVENT_ERROR, errorMsg));
+            }
+        });
+    }
+
+
+    /**
+     * 关闭网络对讲
+     */
+    public void close() {
+        EMClient.getInstance().chatroomManager().leaveChatRoom(toChatUsername);
+        EMClient.getInstance().chatManager().removeMessageListener(msgListener);
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         super.onDestroy();
-        EMClient.getInstance().chatManager().removeMessageListener(msgListener);
-        activityInstance = null;
+        Log.e("ZM", "Service onDestroy");
+        close();
     }
 
+
+    protected Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(android.os.Message msg) {
+            int index = msg.what;
+        }
+    };
 
     EMMessageListener msgListener = new EMMessageListener() {
 
@@ -136,99 +236,10 @@ public class ChatActivity extends BaseActivity {
         }
     };
 
-    @Override
-    protected void onNewIntent(Intent intent) {
-        // make sure only one chat activity is opened
-        String username = intent.getStringExtra("userId");
-        if (toChatUsername.equals(username))
-            super.onNewIntent(intent);
-        else {
-            finish();
-            startActivity(intent);
-        }
 
-    }
-
-    @Override
-    public void onBackPressed() {
-        ChatActivity.this.finish();
-    }
-
-    public String getToChatUsername() {
-        return toChatUsername;
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        PermissionsManager.getInstance().notifyPermissionsChange(permissions, grantResults);
-    }
-
-    private boolean isFirst = true;
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_F5) {
-            if (isFirst) {
-                start();
-            } else {
-                stop();
-            }
-
-        }
-        return super.onKeyDown(keyCode, event);
-    }
-
-    /**
-     * 结束录音操作
-     */
-    private void stop() {
-        mWave.stopAnim();
-        try {
-            int length = stopRecoding();
-            if (length > 0) {
-                Log.e("ZM", "录音完毕");
-                //filePath为语音文件路径，length为录音时间(秒)
-                EMMessage message = EMMessage.createVoiceSendMessage(getVoiceFilePath(), length, toChatUsername);
-                //如果是群聊，设置chattype，默认是单聊
-                message.setChatType(EMMessage.ChatType.ChatRoom);
-                EMClient.getInstance().chatManager().sendMessage(message);
-            } else if (length == EMError.FILE_INVALID) {
-                Toast.makeText(getApplicationContext(), R.string.Recording_without_permission, Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(getApplicationContext(), R.string.The_recording_time_is_too_short, Toast.LENGTH_SHORT).show();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-            Toast.makeText(getApplicationContext(), R.string.send_failure_please, Toast.LENGTH_SHORT).show();
-        }
-        isFirst = true;
-    }
-
-    /**
-     * 开始录音操作
-     */
-    private void start() {
-        mWave.startAnim();
-        Log.e("ZM", "KEYCODE_F5 onKeyDown: 1");
-        EaseChatRowVoicePlayer voicePlayer = EaseChatRowVoicePlayer.getInstance(getApplicationContext());
-        if (voicePlayer.isPlaying())
-            voicePlayer.stop();
-        startRecording();
-        isFirst = false;
-    }
-
-
-    protected Handler mHandler = new Handler() {
-        @Override
-        public void handleMessage(android.os.Message msg) {
-            int index = msg.what;
-        }
-    };
-
-    public void startRecording() {
+    private void startRecording() {
         if (!EaseCommonUtils.isSdcardExist()) {
-            Toast.makeText(getApplicationContext(), R.string.Send_voice_need_sdcard_support, Toast.LENGTH_SHORT).show();
+            showToast(getApplicationContext().getResources().getString(R.string.Send_voice_need_sdcard_support));
             return;
         }
         try {
@@ -240,23 +251,23 @@ public class ChatActivity extends BaseActivity {
                 wakeLock.release();
             if (voiceRecorder != null)
                 voiceRecorder.discardRecording();
-            Toast.makeText(getApplicationContext(), R.string.recoding_fail, Toast.LENGTH_SHORT).show();
+            showToast(getApplicationContext().getResources().getString(R.string.recoding_fail));
             return;
         }
     }
 
-    public int stopRecoding() {
+    private int stopRecoding() {
         if (wakeLock.isHeld())
             wakeLock.release();
         return voiceRecorder.stopRecoding();
     }
 
-    public String getVoiceFilePath() {
+    private String getVoiceFilePath() {
         return voiceRecorder.getVoiceFilePath();
     }
 
 
-    public synchronized void onBubbleClick(final EMMessage message) {
+    private synchronized void onBubbleClick(final EMMessage message) {
         String msgId = message.getMsgId();
 
         if (voicePlayer.isPlaying()) {
@@ -292,14 +303,14 @@ public class ChatActivity extends BaseActivity {
                     play(message);
                 } else {
                     EMVoiceMessageBody voiceBody = (EMVoiceMessageBody) message.getBody();
-                    EMLog.i("ZM", "Voice body download status: " + voiceBody.downloadStatus());
+                    EMLog.e("ZM", "Voice body download status: " + voiceBody.downloadStatus());
                     switch (voiceBody.downloadStatus()) {
                         case PENDING:// Download not begin
                         case FAILED:// Download failed
                             asyncDownloadVoice(message);
                             break;
                         case DOWNLOADING:// During downloading
-                            Toast.makeText(getApplicationContext(), st, Toast.LENGTH_SHORT).show();
+                            showToast(st);
                             break;
                         case SUCCESSED:// Download success
                             play(message);
@@ -307,9 +318,9 @@ public class ChatActivity extends BaseActivity {
                     }
                 }
             } else if (message.status() == EMMessage.Status.INPROGRESS) {
-                Toast.makeText(getApplicationContext(), st, Toast.LENGTH_SHORT).show();
+                showToast(st);
             } else if (message.status() == EMMessage.Status.FAIL) {
-                Toast.makeText(getApplicationContext(), st, Toast.LENGTH_SHORT).show();
+                showToast(st);
                 asyncDownloadVoice(message);
             }
         }
@@ -363,5 +374,15 @@ public class ChatActivity extends BaseActivity {
                 super.onPostExecute(result);
             }
         }.execute();
+    }
+
+
+    private void showToast(final String msg) {
+        mHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(VoiceService.this, msg, Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }
