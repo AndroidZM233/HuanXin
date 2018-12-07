@@ -2,8 +2,10 @@ package com.speedata.huanxin.service;
 
 import android.annotation.SuppressLint;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
 import android.os.Handler;
@@ -50,6 +52,8 @@ public class VoiceService extends Service {
     protected EaseVoiceRecorder voiceRecorder;
     protected PowerManager.WakeLock wakeLock;
     private EaseChatRowVoicePlayer voicePlayer;
+    private boolean isFirst = true;
+    private KeyReceiver keyReceiver;
 
     @Nullable
     @Override
@@ -61,6 +65,11 @@ public class VoiceService extends Service {
     @SuppressLint("InvalidWakeLockTag")
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        IntentFilter intentFilter = new IntentFilter();
+        intentFilter.addAction(Constant.KEYCODE);
+        keyReceiver = new KeyReceiver();
+        registerReceiver(keyReceiver, intentFilter);
+
         voiceRecorder = new EaseVoiceRecorder(mHandler);
         wakeLock = ((PowerManager) getApplicationContext().getSystemService(Context.POWER_SERVICE)).newWakeLock(
                 PowerManager.SCREEN_DIM_WAKE_LOCK, "demo");
@@ -69,6 +78,58 @@ public class VoiceService extends Service {
         isRegister = SharedXmlUtil.getInstance(this).read(Constant.EVENT_IS_REGISTER, false);
         open();
         return super.onStartCommand(intent, flags, startId);
+    }
+
+    class KeyReceiver extends BroadcastReceiver {
+
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(Constant.KEYCODE)) {
+                if (isFirst) {
+                    start();
+                } else {
+                    stop();
+                }
+            }
+        }
+    }
+
+    /**
+     * 结束录音操作
+     */
+    private void stop() {
+        try {
+            int length = stopRecoding();
+            if (length > 0) {
+                Log.e("ZM", "录音完毕");
+                //filePath为语音文件路径，length为录音时间(秒)
+                EMMessage message = EMMessage.createVoiceSendMessage(getVoiceFilePath(), length, toChatUsername);
+                //如果是群聊，设置chattype，默认是单聊
+                message.setChatType(EMMessage.ChatType.ChatRoom);
+                EMClient.getInstance().chatManager().sendMessage(message);
+            } else if (length == EMError.FILE_INVALID) {
+                Toast.makeText(getApplicationContext(), R.string.Recording_without_permission, Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(getApplicationContext(), R.string.The_recording_time_is_too_short, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            EventBus.getDefault().post(new MsgEvent(Constant.EVENT_ERROR, e.toString()));
+        }
+        isFirst = true;
+    }
+
+    /**
+     * 开始录音操作
+     */
+    private void start() {
+        Log.e("ZM", "KEYCODE_F5 onKeyDown: 1");
+        EaseChatRowVoicePlayer voicePlayer = EaseChatRowVoicePlayer.getInstance(getApplicationContext());
+        if (voicePlayer.isPlaying())
+            voicePlayer.stop();
+        startRecording();
+        isFirst = false;
     }
 
 
@@ -185,6 +246,7 @@ public class VoiceService extends Service {
         super.onDestroy();
         Log.e("ZM", "Service onDestroy");
         close();
+        unregisterReceiver(keyReceiver);
     }
 
 

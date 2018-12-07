@@ -50,6 +50,8 @@ public class Constant extends EaseConstant {
 
     //错误
     public static final String EVENT_ERROR = "EVENT_ERROR";
+    //对讲按键
+    public static final String EVENT_BTN = "EVENT_BTN";
     //账号
     public static final String EVENT_ID = "EVENT_ID";
     //是否注册过
@@ -59,5 +61,7 @@ public class Constant extends EaseConstant {
     //聊天室id
     public static final String EVENT_ROOM_ID = "ChatRoomID";
     public static final String EVENT_ROOM_NAME = "ChatRoomName";
+    //监听按键被点击后广播
+    public static final String KEYCODE = "com.speedata.broadcaster.KEYCODE";
 
 }

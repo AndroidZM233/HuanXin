@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.constraint.ConstraintLayout;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
@@ -19,6 +20,7 @@ import com.speedata.huanxin.runtimepermissions.PermissionsManager;
 import com.speedata.huanxin.service.VoiceService;
 import com.speedata.huanxin.utils.DeviceUtils;
 import com.speedata.huanxin.utils.EaseCommonUtils;
+import com.speedata.huanxin.utils.OpenAccessibilitySettingHelper;
 import com.speedata.huanxin.utils.SharedXmlUtil;
 
 import org.greenrobot.eventbus.EventBus;
@@ -39,6 +41,7 @@ public class MainActivity extends BaseActivity implements View.OnClickListener {
     private TextView tvKey;
     private ConstraintLayout viewSetting;
     private KProgressHUD kProgressHUD;
+    private boolean setKey = false;
 
     @org.greenrobot.eventbus.Subscribe(threadMode = ThreadMode.MAIN)
     public void onEventMainThread(MsgEvent mEvent) {
@@ -92,6 +95,7 @@ public class MainActivity extends BaseActivity implements View.OnClickListener {
         tvId.setText(DeviceUtils.getIMEI(getApplicationContext()));
         tvStatus = (TextView) findViewById(R.id.tv_status);
         tvKey = (TextView) findViewById(R.id.tv_key);
+        tvKey.setOnClickListener(this);
         viewSetting = (ConstraintLayout) findViewById(R.id.view_setting);
 
         cbStart.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -128,9 +132,30 @@ public class MainActivity extends BaseActivity implements View.OnClickListener {
                 Intent intent = new Intent(MainActivity.this, PublicChatRoomsActivity.class);
                 startActivity(intent);
                 break;
+            case R.id.tv_key:
+                setKey = true;
+                tvKey.setText("请按下按键....");
+                break;
         }
     }
 
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (setKey) {
+            SharedXmlUtil.getInstance(getApplicationContext()).write(Constant.EVENT_BTN, keyCode);
+            tvKey.setText("对讲物理按键：" + keyCode);
+            setKey = false;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        int read = SharedXmlUtil.getInstance(getApplicationContext()).read(Constant.EVENT_BTN, 135);
+        tvKey.setText("对讲物理按键：" + read);
+    }
 
     @Override
     protected void onDestroy() {
@@ -146,7 +171,9 @@ public class MainActivity extends BaseActivity implements View.OnClickListener {
      * 处理错误
      */
     private void handleErrors() {
-        kProgressHUD.dismiss();
+        if (kProgressHUD != null) {
+            kProgressHUD.dismiss();
+        }
         cbStart.setChecked(false);
     }
 
