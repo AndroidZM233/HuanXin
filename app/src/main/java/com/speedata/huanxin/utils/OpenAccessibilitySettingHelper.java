@@ -1,38 +1,45 @@
 package com.speedata.huanxin.utils;
 
+import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.provider.Settings;
 
+import java.util.List;
+
 public class OpenAccessibilitySettingHelper {
-    private static final String ACTION = "action";
-    private static final String ACTION_START_ACCESSIBILITY_SETTING = "action_start_accessibility_setting";
+    /**
+     * 跳转到无障碍服务设置页面
+     * @param context 设备上下文
+     */
+    public static void jumpToSettingPage(Context context){
+        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        context.startActivity(intent);
+    }
 
-    public static void jumpToSettingPage(Context context) {
-        try {
-//            Intent intent = new Intent(context, AccessibilityOpenHelperActivity.class);
-//            intent.putExtra(ACTION, ACTION_START_ACCESSIBILITY_SETTING);
-//            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-//            context.startActivity(intent);
-
-            String enabledServicesSetting = Settings.Secure.getString(
-                    context.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-
-            ComponentName selfComponentName = new ComponentName(context.getPackageName(),
-                    "Your AccessibilityService Class Name");
-            String flattenToString = selfComponentName.flattenToString();
-            if (enabledServicesSetting == null ||
-                    !enabledServicesSetting.contains(flattenToString)) {
-                enabledServicesSetting += flattenToString;
-            }
-            Settings.Secure.putString(context.getContentResolver(),
-                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-                    enabledServicesSetting);
-            Settings.Secure.putInt(context.getContentResolver(),
-                    Settings.Secure.ACCESSIBILITY_ENABLED, 1);
-        } catch (Exception ignore) {
-            ignore.printStackTrace();
+    /**
+     * 判断是否有辅助功能权限
+     * @return true 已开启
+     *          false 未开启
+     */
+    public static boolean isAccessibilitySettingsOn(Context context,String className){
+        if (context == null){
+            return false;
         }
+        ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        List<ActivityManager.RunningServiceInfo> runningServices =
+                activityManager.getRunningServices(100);// 获取正在运行的服务列表
+        if (runningServices.size()<0){
+            return false;
+        }
+        for (int i=0;i<runningServices.size();i++){
+            ComponentName service = runningServices.get(i).service;
+            if (service.getClassName().equals(className)){
+                return true;
+            }
+        }
+        return false;
     }
 }

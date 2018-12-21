@@ -15,6 +15,8 @@ import android.os.SystemClock;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Toast;
 
 import com.hyphenate.EMCallBack;
@@ -35,8 +37,10 @@ import com.speedata.huanxin.domain.MsgEvent;
 import com.speedata.huanxin.model.EaseChatRowVoicePlayer;
 import com.speedata.huanxin.model.EaseVoiceRecorder;
 import com.speedata.huanxin.ui.PublicChatRoomsActivity;
+import com.speedata.huanxin.ui.dialog.WaveViewDialog;
 import com.speedata.huanxin.utils.DeviceUtils;
 import com.speedata.huanxin.utils.EaseCommonUtils;
+import com.speedata.huanxin.utils.OpenAccessibilitySettingHelper;
 import com.speedata.huanxin.utils.SharedXmlUtil;
 
 import org.greenrobot.eventbus.EventBus;
@@ -54,6 +58,7 @@ public class VoiceService extends Service {
     private EaseChatRowVoicePlayer voicePlayer;
     private boolean isFirst = true;
     private KeyReceiver keyReceiver;
+    private WaveViewDialog waveViewDialog;
 
     @Nullable
     @Override
@@ -77,6 +82,12 @@ public class VoiceService extends Service {
 
         isRegister = SharedXmlUtil.getInstance(this).read(Constant.EVENT_IS_REGISTER, false);
         open();
+
+        if (!OpenAccessibilitySettingHelper.isAccessibilitySettingsOn(this,
+                VoiceAccessibilityService.class.getName())) {// 判断服务是否开启
+            OpenAccessibilitySettingHelper.jumpToSettingPage(this);// 跳转到开启页面
+        }
+
         return super.onStartCommand(intent, flags, startId);
     }
 
@@ -100,6 +111,7 @@ public class VoiceService extends Service {
      */
     private void stop() {
         try {
+            waveViewDialog.dismiss();
             int length = stopRecoding();
             if (length > 0) {
                 Log.e("ZM", "录音完毕");
@@ -124,6 +136,11 @@ public class VoiceService extends Service {
      * 开始录音操作
      */
     private void start() {
+        waveViewDialog = new WaveViewDialog(this);
+        waveViewDialog.setCancelable(false);
+        waveViewDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        waveViewDialog.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+        waveViewDialog.show();
         Log.e("ZM", "KEYCODE_F5 onKeyDown: 1");
         EaseChatRowVoicePlayer voicePlayer = EaseChatRowVoicePlayer.getInstance(getApplicationContext());
         if (voicePlayer.isPlaying())
